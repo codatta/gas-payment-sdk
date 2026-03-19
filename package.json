@@ -1,0 +1,55 @@
+{
+  "name": "@xny/gas-payment-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for gas payment: token/ETH price, EntryPoint handleOps, fee calculation, ERC3009 payment, submit",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "example": "tsx examples/basic.ts all",
+    "example:price": "tsx examples/basic.ts price",
+    "example:eth-price": "tsx examples/basic.ts eth-price",
+    "example:quote": "tsx examples/basic.ts quote",
+    "example:prepare": "tsx examples/basic.ts prepare",
+    "example:state": "tsx examples/basic.ts state",
+    "example:status": "tsx examples/basic.ts status",
+    "example:submit": "tsx examples/basic.ts submit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "gas",
+    "payment",
+    "ERC3009",
+    "EntryPoint",
+    "UserOperation"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "dotenv": "^17.3.1",
+    "tsup": "^8.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0",
+    "vitest": "^2.0.0"
+  },
+  "dependencies": {
+    "viem": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
