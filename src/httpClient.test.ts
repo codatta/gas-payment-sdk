@@ -30,31 +30,23 @@ describe("HttpClient", () => {
   }
 
   describe("getTokenPrice", () => {
-    it("calls GET /bundler/price and returns data.price", async () => {
+    const token = "0x0000000000000000000000000000000000000001" as `0x${string}`;
+
+    it("calls GET /bundler/price?token=... and returns data.tokenPerETH", async () => {
       const client = new HttpClient({ apiBaseUrl: baseUrl });
-      respondOk({ price: "1000000000000000000" });
-      const res = await client.getTokenPrice();
+      respondOk({ tokenPerETH: "2500000000" });
+      const res = await client.getTokenPrice({ token });
       expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining("/bundler/price"),
+        expect.stringMatching(/\?.*token=0x/),
         expect.objectContaining({ method: "GET" })
       );
-      expect(res).toEqual({ price: "1000000000000000000" });
-    });
-
-    it("appends symbol query when provided", async () => {
-      const client = new HttpClient({ apiBaseUrl: baseUrl });
-      respondOk({ price: "2000000000000000000" });
-      await client.getTokenPrice({ symbol: "ETH" });
-      expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringMatching(/\?.*symbol=ETH/),
-        expect.any(Object)
-      );
+      expect(res).toEqual({ tokenPerETH: "2500000000" });
     });
 
     it("throws SdkHttpError when code !== 200", async () => {
       const client = new HttpClient({ apiBaseUrl: baseUrl });
       respondFail(-1, "Server error");
-      await expect(client.getTokenPrice()).rejects.toThrow(SdkHttpError);
+      await expect(client.getTokenPrice({ token })).rejects.toThrow(SdkHttpError);
     });
   });
 
@@ -86,6 +78,7 @@ describe("HttpClient", () => {
       const res = await client.postSubmit({
         sender: "0xaaa",
         target: "0xbbb",
+        token: "0xccc",
         nonce: 0,
         callData: "0x",
         signature: "0x",
@@ -133,8 +126,8 @@ describe("HttpClient", () => {
         apiBaseUrl: baseUrl,
         apiKey: "secret",
       });
-      respondOk({ price: "0" });
-      await client.getTokenPrice();
+      respondOk({ tokenPerETH: "0" });
+      await client.getTokenPrice({ token: "0x0000000000000000000000000000000000000001" as `0x${string}` });
       expect(fetchMock).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({

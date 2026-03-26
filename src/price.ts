@@ -1,41 +1,26 @@
 import type { HttpClient } from "./httpClient";
 import type { TokenPriceRequest, TokenPriceResponse, GasQuote, FeeBreakdown } from "./types";
 
-const SCALE = 1e18;
-/** Price scale: 1e18 = 1.0; all prices in BigInt use this. */
-export const PRICE_SCALE = 10n ** 18n;
-
-/** Parse backend price string (e.g. 1e18 = 1.0) to BigInt and number. */
+/** Parse backend response: tokenPerETH = token smallest units per 1 ETH. */
 export function parsePriceResponse(res: TokenPriceResponse): {
-  priceRaw: string;
-  priceE18: bigint;
-  price: number;
+  tokenPerETH: bigint;
 } {
-  const raw = res.price ?? "0";
-  let priceE18: bigint;
+  const raw = res.tokenPerETH ?? "0";
+  let tokenPerETH: bigint;
   try {
-    priceE18 = BigInt(raw);
+    tokenPerETH = BigInt(raw);
   } catch {
-    priceE18 = 0n;
+    tokenPerETH = 0n;
   }
-  const price = Number(priceE18) / SCALE;
-  return { priceRaw: raw, priceE18, price };
+  return { tokenPerETH };
 }
 
-/** Fetch token price from API (optional symbol). */
+/** Fetch token price from API. */
 export async function fetchTokenPrice(
   client: HttpClient,
-  params: TokenPriceRequest = {}
-): Promise<{ priceRaw: string; priceE18: bigint; price: number }> {
+  params: TokenPriceRequest
+): Promise<{ tokenPerETH: bigint }> {
   const res = await client.getTokenPrice(params);
-  return parsePriceResponse(res);
-}
-
-/** Fetch ETH price from API (GET /bundler/price with symbol=ETH when supported). */
-export async function fetchEthPrice(
-  client: HttpClient
-): Promise<{ priceRaw: string; priceE18: bigint; price: number }> {
-  const res = await client.getTokenPrice({ symbol: "ETH" });
   return parsePriceResponse(res);
 }
 
@@ -45,40 +30,41 @@ export async function fetchEthPrice(
  */
 export const DEFAULT_SAFETY_MARGIN = 1.2;
 
+const ONE_ETH = 10n ** 18n;
+
 /**
- * Compute payment amount in token smallest units (BigInt only).
- * Formula: Amount = ceil((gas * gas_price * ethPriceE18 * 10^tokenDecimals) / (PRICE_SCALE * tokenPriceE18) * safetyMargin)
+ * Compute payment amount in token smallest units.
+ *
+ * tokenPerETH = token smallest units per 1 ETH (from bundler API).
+ * Formula: Amount = ceil(gasCostWei * tokenPerETH / 1e18 * safetyMargin)
  */
 export function calculatePaymentAmount(params: {
   gas: bigint;
   gasPriceWei: bigint;
-  ethPriceE18: bigint;
-  tokenPriceE18: bigint;
-  tokenDecimals: number;
+  /** Token smallest units per 1 ETH (from bundler API) */
+  tokenPerETH: bigint;
   /** Safety margin to cover gas/price volatility (default: 1.2 = 20%) */
   safetyMargin?: number;
 }): bigint {
-  const { gas, gasPriceWei, ethPriceE18, tokenPriceE18, tokenDecimals, safetyMargin = DEFAULT_SAFETY_MARGIN } = params;
-  if (tokenPriceE18 <= 0n) return 0n;
+  const { gas, gasPriceWei, tokenPerETH, safetyMargin = DEFAULT_SAFETY_MARGIN } = params;
+  if (tokenPerETH <= 0n) return 0n;
   const gasCostWei = gas * gasPriceWei;
-  const numerator =
-    gasCostWei * ethPriceE18 * (10n ** BigInt(tokenDecimals));
-  const denominator = PRICE_SCALE * tokenPriceE18;
-  // Use ceil division: (numerator + denominator - 1) / denominator
-  const baseAmount = (numerator + denominator - 1n) / denominator;
-  // Apply safety margin (convert to bigint with proper precision)
-  const marginNumerator = BigInt(Math.ceil(safetyMargin * 100));
-  const marginDenominator = 100n;
-  return (baseAmount * marginNumerator + marginDenominator - 1n) / marginDenominator;
+
+  // tokenAmount = gasCostWei * tokenPerETH * margin / 1e18
+  const marginNumerator = BigInt(Math.ceil(safetyMargin * 10000));
+  const numerator = gasCostWei * tokenPerETH * marginNumerator;
+  const denominator = ONE_ETH * 10000n;
+
+  // ceil division
+  return (numerator + denominator - 1n) / denominator;
 }
 
-/** Build FeeBreakdown from quote, prices (E18), and estimated gas. */
+/** Build FeeBreakdown from quote, tokenPerETH, and estimated gas. */
 export function buildFeeBreakdown(params: {
   gas: bigint;
   gasPriceWei: bigint;
-  ethPriceE18: bigint;
-  tokenPriceE18: bigint;
-  tokenDecimals: number;
+  /** Token smallest units per 1 ETH (from bundler API) */
+  tokenPerETH: bigint;
   /** Safety margin to cover gas/price volatility (default: 1.2 = 20%) */
   safetyMargin?: number;
 }): FeeBreakdown {
@@ -87,10 +73,7 @@ export function buildFeeBreakdown(params: {
   return {
     gas: params.gas,
     gasPriceWei: params.gasPriceWei,
-    ethPriceE18: params.ethPriceE18,
-    tokenPriceE18: params.tokenPriceE18,
-    ethPrice: Number(params.ethPriceE18) / SCALE,
-    tokenPrice: Number(params.tokenPriceE18) / SCALE,
+    tokenPerETH: params.tokenPerETH,
     paymentAmount,
     safetyMargin,
   };

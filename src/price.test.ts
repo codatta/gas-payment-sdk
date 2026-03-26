@@ -4,89 +4,71 @@ import {
   calculatePaymentAmount,
   buildFeeBreakdown,
   normalizeQuote,
-  PRICE_SCALE,
 } from "./price";
 
 describe("parsePriceResponse", () => {
-  it("parses scaled price 1e18 as 1.0", () => {
-    const out = parsePriceResponse({ price: "1000000000000000000" });
-    expect(out.priceRaw).toBe("1000000000000000000");
-    expect(out.priceE18).toBe(1000000000000000000n);
-    expect(out.price).toBe(1);
+  it("parses tokenPerETH string to bigint", () => {
+    const out = parsePriceResponse({ tokenPerETH: "2500000000" }); // 2500 USDC (6 decimals)
+    expect(out.tokenPerETH).toBe(2500000000n);
   });
 
-  it("parses scaled price 2e18 as 2.0", () => {
-    const out = parsePriceResponse({ price: "2000000000000000000" });
-    expect(out.priceE18).toBe(2000000000000000000n);
-    expect(out.price).toBe(2);
-  });
-
-  it("handles missing price as 0", () => {
-    const out = parsePriceResponse({ price: "" });
-    expect(out.priceE18).toBe(0n);
-    expect(out.price).toBe(0);
+  it("handles missing tokenPerETH as 0", () => {
+    const out = parsePriceResponse({ tokenPerETH: "" });
+    expect(out.tokenPerETH).toBe(0n);
   });
 
   it("handles invalid string as 0", () => {
-    const out = parsePriceResponse({ price: "invalid" });
-    expect(out.priceE18).toBe(0n);
-    expect(out.price).toBe(0);
+    const out = parsePriceResponse({ tokenPerETH: "invalid" });
+    expect(out.tokenPerETH).toBe(0n);
   });
 });
 
 describe("calculatePaymentAmount", () => {
-  it("computes Amount = ceil(gas * gas_price * ETH_price / token_price * safetyMargin) in token smallest units (E18)", () => {
-    // 100000 gas * 20 Gwei * 2000 USD/ETH / 1 USD/token, 6 decimals
+  it("computes amount = gasCostWei * tokenPerETH / 1e18 * safetyMargin", () => {
+    // 100000 gas * 20 Gwei = 2e15 wei gas cost = 0.002 ETH
+    // tokenPerETH = 2500e6 (2500 USDC in smallest units per ETH)
+    // expected: 0.002 ETH * 2500 USDC/ETH = 5 USDC = 5e6
+    // with 20% margin: ceil(5e6 * 1.2) = 6e6
     const amount = calculatePaymentAmount({
       gas: 100_000n,
       gasPriceWei: 20n * 10n ** 9n,
-      ethPriceE18: 2000n * PRICE_SCALE,
-      tokenPriceE18: 1n * PRICE_SCALE,
-      tokenDecimals: 6,
-      safetyMargin: 1.2, // 20% safety margin (default)
+      tokenPerETH: 2_500_000_000n, // 2500 USDC
+      safetyMargin: 1.2,
     });
-    // costWei = 100000 * 20e9 = 2e15 wei
-    // costUSD = 2e15 / 1e18 * 2000 = 4
-    // token amount = 4 / 1 = 4, in smallest units = 4 * 1e6 = 4000000
-    // with 20% margin: 4000000 * 1.2 = 4800000
-    expect(amount).toBe(4_800_000n);
+    expect(amount).toBe(6_000_000n);
   });
 
   it("computes without safety margin when safetyMargin=1.0", () => {
     const amount = calculatePaymentAmount({
       gas: 100_000n,
       gasPriceWei: 20n * 10n ** 9n,
-      ethPriceE18: 2000n * PRICE_SCALE,
-      tokenPriceE18: 1n * PRICE_SCALE,
-      tokenDecimals: 6,
-      safetyMargin: 1.0, // no margin
+      tokenPerETH: 2_500_000_000n,
+      safetyMargin: 1.0,
     });
-    // costWei = 100000 * 20e9 = 2e15 wei
-    // costUSD = 2e15 / 1e18 * 2000 = 4
-    // token amount = 4 / 1 = 4, in smallest units = 4 * 1e6 = 4000000
-    expect(amount).toBe(4_000_000n);
+    // 2e15 * 2500e6 / 1e18 = 5000000
+    expect(amount).toBe(5_000_000n);
   });
 
-  it("returns 0 when tokenPriceE18 is 0", () => {
+  it("returns 0 when tokenPerETH is 0", () => {
     const amount = calculatePaymentAmount({
       gas: 100_000n,
       gasPriceWei: 20n * 10n ** 9n,
-      ethPriceE18: 2000n * PRICE_SCALE,
-      tokenPriceE18: 0n,
-      tokenDecimals: 6,
+      tokenPerETH: 0n,
     });
     expect(amount).toBe(0n);
   });
 
-  it("rounds down result", () => {
+  it("rounds up result with ceil division", () => {
+    // 1 gas * 1 wei = 1 wei gas cost
+    // tokenPerETH = 2500e6
+    // raw: 1 * 2500e6 / 1e18 = 0.0000000025 → ceil = 1
     const amount = calculatePaymentAmount({
-      gas: 99_999n,
+      gas: 1n,
       gasPriceWei: 1n,
-      ethPriceE18: PRICE_SCALE,
-      tokenPriceE18: PRICE_SCALE,
-      tokenDecimals: 0,
+      tokenPerETH: 2_500_000_000n,
+      safetyMargin: 1.0,
     });
-    expect(amount).toBeGreaterThanOrEqual(0n);
+    expect(amount).toBe(1n);
   });
 });
 
@@ -95,16 +77,11 @@ describe("buildFeeBreakdown", () => {
     const fee = buildFeeBreakdown({
       gas: 150_000n,
       gasPriceWei: 30n * 10n ** 9n,
-      ethPriceE18: 3000n * PRICE_SCALE,
-      tokenPriceE18: 1n * PRICE_SCALE,
-      tokenDecimals: 6,
+      tokenPerETH: 2_500_000_000n,
     });
     expect(fee.gas).toBe(150_000n);
     expect(fee.gasPriceWei).toBe(30n * 10n ** 9n);
-    expect(fee.ethPriceE18).toBe(3000n * PRICE_SCALE);
-    expect(fee.tokenPriceE18).toBe(1n * PRICE_SCALE);
-    expect(fee.ethPrice).toBe(3000);
-    expect(fee.tokenPrice).toBe(1);
+    expect(fee.tokenPerETH).toBe(2_500_000_000n);
     expect(fee.paymentAmount).toBeGreaterThan(0n);
   });
 });

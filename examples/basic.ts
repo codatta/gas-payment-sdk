@@ -6,7 +6,6 @@
  *
  * Env: loaded from .env in project root. API_BASE_URL, RPC_URL, CHAIN_ID, ENTRY_POINT_ADDRESS,
  *      ERC3009_TOKEN_ADDRESS, PAYMENT_TARGET_CONTRACT,
- *      ETH_PRICE_FACTORY_ADDRESS, ETH_PRICE_WETH_ADDRESS, ETH_PRICE_QUOTE_TOKEN_ADDRESS, ETH_PRICE_FEE_TIER,
  *      SENDER, TARGET, CALL_DATA, REQUEST_ID,
  *      SENDER_PRIVATE_KEY (for submit: sign userOpHash locally), or SUBMIT_SIGNATURE (manual hex)
  */
@@ -17,7 +16,6 @@ import {
   GasPaymentClient,
   createProvider,
   ERC20_BALANCE_OF_ABI,
-  getDefaultEthPriceConfig,
   buildTransferWithAuthorizationTypedData,
   buildErc3009PaymasterAndData,
   calculatePaymentAmount,
@@ -62,17 +60,6 @@ function getClient(): GasPaymentClient {
   const entryPointAddress = requireEnv("ENTRY_POINT_ADDRESS") as `0x${string}`;
   const erc3009TokenAddress = requireEnv("ERC3009_TOKEN_ADDRESS") as `0x${string}`;
   const paymentTargetContract = requireEnv("PAYMENT_TARGET_CONTRACT") as `0x${string}`;
-  const defaults = getDefaultEthPriceConfig(chainId);
-  const ethPriceFactoryAddress = (process.env.ETH_PRICE_FACTORY_ADDRESS ??
-    defaults.ethPriceFactoryAddress) as `0x${string}`;
-  const ethPriceWethAddress = (process.env.ETH_PRICE_WETH_ADDRESS ??
-    defaults.ethPriceWethAddress) as `0x${string}`;
-  const ethPriceQuoteTokenAddress = (process.env.ETH_PRICE_QUOTE_TOKEN_ADDRESS ??
-    defaults.ethPriceQuoteTokenAddress) as `0x${string}`;
-  const ethPriceFeeTier = parseInt(
-    process.env.ETH_PRICE_FEE_TIER ?? String(defaults.ethPriceFeeTier),
-    10
-  );
 
   return new GasPaymentClient({
     apiBaseUrl,
@@ -81,10 +68,6 @@ function getClient(): GasPaymentClient {
     entryPointAddress,
     erc3009TokenAddress,
     paymentTargetContract,
-    ethPriceFactoryAddress,
-    ethPriceWethAddress,
-    ethPriceQuoteTokenAddress,
-    ethPriceFeeTier,
   });
 }
 
@@ -93,8 +76,7 @@ async function cmdPrice(): Promise<void> {
   console.log("getTokenPrice()");
   try {
     const tokenPrice = await client.getTokenPrice({});
-    console.log("  price (display):", tokenPrice.price);
-    console.log("  price (E18):   ", tokenPrice.priceE18.toString());
+    console.log("  tokenPerETH:   ", tokenPrice.tokenPerETH.toString());
   } catch (e) {
     console.log("  error:", (e as Error).message);
   }
@@ -102,11 +84,10 @@ async function cmdPrice(): Promise<void> {
 
 async function cmdEthPrice(): Promise<void> {
   const client = getClient();
-  console.log("getEthPrice()");
+  console.log("getTokenPrice() — Token/ETH price from bundler API");
   try {
-    const ethPrice = await client.getEthPrice();
-    console.log("  price (display):", ethPrice.price);
-    console.log("  price (E18):   ", ethPrice.priceE18.toString());
+    const tokenPrice = await client.getTokenPrice({});
+    console.log("  tokenPerETH:   ", tokenPrice.tokenPerETH.toString());
   } catch (e) {
     console.log("  error:", (e as Error).message);
   }
@@ -190,13 +171,12 @@ async function cmdPrepare(): Promise<void> {
   const target = targetEnv;
   const callData = (process.env.CALL_DATA ?? "0x") as `0x${string}`;
 
-  console.log("preparePayment({ sender, target, callData, tokenDecimals: 6 })");
+  console.log("preparePayment({ sender, target, callData })");
   try {
     const prepared = await client.preparePayment({
       sender,
       target,
       callData,
-      tokenDecimals: 6,
     });
     console.log("  userOp (no sig):", {
       sender: prepared.userOp.sender,
@@ -207,10 +187,7 @@ async function cmdPrepare(): Promise<void> {
     console.log("  fee:           ", {
       gas: prepared.fee.gas.toString(),
       gasPriceWei: prepared.fee.gasPriceWei.toString(),
-      ethPriceE18: prepared.fee.ethPriceE18.toString(),
-      tokenPriceE18: prepared.fee.tokenPriceE18.toString(),
-      ethPrice: prepared.fee.ethPrice,
-      tokenPrice: prepared.fee.tokenPrice,
+      tokenPerETH: prepared.fee.tokenPerETH.toString(),
       paymentAmount: prepared.fee.paymentAmount.toString(),
     });
     console.log("  userOpHash:    ", prepared.userOpHash);
@@ -277,9 +254,8 @@ async function cmdSubmit(): Promise<void> {
     try {
       // 4. 获取价格与 gas 限制，并计算需要的 ERC3009 支付金额（amount）
       const gasPriceWei = await client.getGasPriceWei();
-      const { priceE18: ethPriceE18 } = await client.getEthPrice();
       const {
-        priceE18: tokenPriceE18,
+        tokenPerETH,
         verificationGasLimit: verificationGasLimitFromPrice,
         preVerificationGas: preVerificationGasFromPrice,
       } = await client.getTokenPrice();
@@ -307,21 +283,31 @@ async function cmdSubmit(): Promise<void> {
       const verificationGasLimit = BigInt(verificationGasLimitFromPrice ?? 100_000);
       const preVerificationGas = BigInt(preVerificationGasFromPrice ?? 50_000);
       const totalGas = callGasLimit + verificationGasLimit + preVerificationGas;
+      const gasCostWei = totalGas * gasPriceWei;
+      console.log("\n--- value 计算过程 ---");
+      console.log("  callGasLimit:        ", callGasLimit.toString());
+      console.log("  verificationGasLimit:", verificationGasLimit.toString());
+      console.log("  preVerificationGas:  ", preVerificationGas.toString());
+      console.log("  totalGas:            ", totalGas.toString());
+      console.log("  gasPriceWei:         ", gasPriceWei.toString());
+      console.log("  gasCostWei (gas*price):", gasCostWei.toString());
+      console.log("  gasCostEth:          ", `${Number(gasCostWei) / 1e18} ETH`);
+      console.log("  tokenPerETH:         ", tokenPerETH.toString(), "(token smallest units per 1 ETH)");
+      console.log("  safetyMargin:        ", "1.2 (default 20%)");
       const amount = calculatePaymentAmount({
         gas: totalGas,
         gasPriceWei,
-        ethPriceE18,
-        tokenPriceE18,
-        tokenDecimals: 6,
+        tokenPerETH,
       });
+      console.log("  amount (token units):", amount.toString());
+      console.log("--- end ---\n");
 
       // 5. 构造 EIP-3009 typed data，并使用同一个私钥签名，得到 r,s,v
       const chainId = parseInt(requireEnv("CHAIN_ID"), 10);
       const erc3009Token = requireEnv("ERC3009_TOKEN_ADDRESS") as `0x${string}`;
-
-      // 从合约 eip712Domain() 读取 EIP-712 domain，与链上完全一致（如不可用则回退到本地配置）
       const rpcUrl = requireEnv("RPC_URL");
       const provider = createProvider(rpcUrl, chainId);
+      // 从合约 eip712Domain() 读取 EIP-712 domain，与链上完全一致（如不可用则回退到本地配置）
       const domain = await fetchEip712DomainFromToken({
         provider,
         token: erc3009Token,
@@ -377,7 +363,6 @@ async function cmdSubmit(): Promise<void> {
         verificationGasLimit,
         preVerificationGas,
         paymasterAndData: paymasterAndData2,
-        tokenDecimals: 6,
       });
       const signature = await account.sign({ hash: prepared2.userOpHash as `0x${string}` });
       console.log("prepared2", signature,prepared2,hexToBytes(prepared2.userOpHash as `0x${string}`));
@@ -398,7 +383,7 @@ async function cmdSubmit(): Promise<void> {
 async function cmdAll(): Promise<void> {
   console.log("=== 1. getTokenPrice ===\n");
   await cmdPrice();
-  console.log("\n=== 2. getEthPrice ===\n");
+  console.log("\n=== 2. getTokenPrice (Token/ETH) ===\n");
   await cmdEthPrice();
   console.log("\n=== 3. getQuote ===\n");
   await cmdQuote();

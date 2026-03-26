@@ -18,9 +18,6 @@ import {
   buildUserOperation,
   getUserOpHash,
   buildErc3009Payment,
-  getPoolAddress,
-  getEthPriceFromPool,
-  isToken0,
 } from "./onchain";
 import type { PublicClient } from "viem";
 
@@ -65,16 +62,6 @@ export class GasPaymentClient {
     if (!config.entryPointAddress) {
       throw new ValidationError("entryPointAddress is required");
     }
-    if (
-      !config.ethPriceFactoryAddress ||
-      !config.ethPriceWethAddress ||
-      !config.ethPriceQuoteTokenAddress ||
-      config.ethPriceFeeTier == null
-    ) {
-      throw new ValidationError(
-        "ethPriceFactoryAddress, ethPriceWethAddress, ethPriceQuoteTokenAddress and ethPriceFeeTier are required for getEthPrice()"
-      );
-    }
     this.config = config;
     this.http = new HttpClient({
       apiBaseUrl: config.apiBaseUrl,
@@ -91,46 +78,20 @@ export class GasPaymentClient {
   }
 
   /**
-   * Get token price from backend (optional symbol, e.g. "USDC"). Price in 10^18 (BigInt).
+   * Get token price from backend: token smallest units per 1 ETH.
+   * If no token is specified, uses the configured erc3009TokenAddress.
    */
   async getTokenPrice(
-    params: TokenPriceRequest = {}
-  ): Promise<{ price: string; priceE18: bigint; verificationGasLimit?: number; preVerificationGas?: number }> {
-    const res = await this.http.getTokenPrice(params);
-    const priceE18 = BigInt(res.price ?? "0");
-    const price = res.price ? String(Number(priceE18) / 1e18) : "0";
+    params: Partial<TokenPriceRequest> = {}
+  ): Promise<{ tokenPerETH: bigint; verificationGasLimit?: number; preVerificationGas?: number }> {
+    const token = params.token ?? this.config.erc3009TokenAddress;
+    const res = await this.http.getTokenPrice({ token });
+    const tokenPerETH = BigInt(res.tokenPerETH ?? "0");
     return {
-      price,
-      priceE18,
+      tokenPerETH,
       verificationGasLimit: res.verificationGasLimit,
       preVerificationGas: res.preVerificationGas,
     };
-  }
-
-  /**
-   * Get ETH price from Uniswap V3: resolve pool via Factory.getPool(WETH, quoteToken, fee), then read slot0. Price in 10^18 (BigInt).
-   */
-  async getEthPrice(): Promise<{ price: string; priceE18: bigint }> {
-    const poolAddress = await getPoolAddress(
-      this.provider,
-      this.config.ethPriceFactoryAddress,
-      this.config.ethPriceWethAddress,
-      this.config.ethPriceQuoteTokenAddress,
-      this.config.ethPriceFeeTier
-    );
-    if (!poolAddress || poolAddress === "0x0000000000000000000000000000000000000000") {
-      throw new ValidationError(
-        "No Uniswap V3 pool found for the given WETH, quote token and fee tier on this chain"
-      );
-    }
-    const wethIsToken0 = isToken0(
-      this.config.ethPriceWethAddress,
-      this.config.ethPriceQuoteTokenAddress
-    );
-    return getEthPriceFromPool(this.provider, poolAddress as `0x${string}`, {
-      wethIsToken0,
-      quoteDecimals: this.config.ethPriceQuoteDecimals ?? 6,
-    });
   }
 
   /**
@@ -153,19 +114,16 @@ export class GasPaymentClient {
   }
 
   /**
-   * Prepare payment: build UserOp, estimate gas for handleOps, compute fee (Amount = gas * gas_price * ETH_price / token_price), build ERC3009 payload.
+   * Prepare payment: build UserOp, estimate gas for handleOps, compute fee, build ERC3009 payload.
+   * Uses Token/ETH price from bundler API directly.
    */
   async preparePayment(
     params: PreparePaymentParams
   ): Promise<PreparePaymentResult> {
     const { quote, gasPriceWei } = await this.getQuote();
-    const [ethPriceRes, tokenPriceRes] = await Promise.all([
-      this.getEthPrice(),
-      this.getTokenPrice({ symbol: undefined }),
-    ]);
-    const ethPriceE18 = ethPriceRes.priceE18;
-    const tokenPriceE18 = tokenPriceRes.priceE18;
-    if (tokenPriceE18 <= 0n) {
+    const tokenPriceRes = await this.getTokenPrice();
+    const tokenPerETH = tokenPriceRes.tokenPerETH;
+    if (tokenPerETH <= 0n) {
       throw new ValidationError("Token price must be positive");
     }
 
@@ -244,12 +202,11 @@ export class GasPaymentClient {
     const gasEstimation =
       callGasLimit + verificationGasLimit + preVerificationGas;
     const gasForFormula = gasEstimation;
+
     const fee = buildFeeBreakdown({
       gas: gasForFormula,
       gasPriceWei,
-      ethPriceE18,
-      tokenPriceE18,
-      tokenDecimals: params.tokenDecimals,
+      tokenPerETH,
     });
 
     // Check underlying ERC20 allowance: user must have approved the ERC3009 token contract.
@@ -321,6 +278,7 @@ export class GasPaymentClient {
     const req: SubmitRequest = {
       sender: op.sender,
       target: op.target,
+      token: this.config.erc3009TokenAddress,
       nonce: Number(op.nonce),
       callData: op.callData,
       callGasLimit: Number(op.callGasLimit),

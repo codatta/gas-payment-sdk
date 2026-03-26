@@ -2,18 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { GasPaymentClient } from "./client";
 import { ValidationError } from "./types";
 
-vi.mock("./onchain", async () => {
-  const actual = await vi.importActual<typeof import("./onchain")>("./onchain");
-  return {
-    ...actual,
-    getPoolAddress: vi.fn().mockResolvedValue("0x0000000000000000000000000000000000000007"),
-    getEthPriceFromPool: vi.fn().mockResolvedValue({
-      price: "2500",
-      priceE18: 2500n * 10n ** 18n,
-    }),
-  };
-});
-
 const validConfig = {
   apiBaseUrl: "https://api.test.com/v1",
   rpcUrl: "https://eth.llamarpc.com",
@@ -21,10 +9,6 @@ const validConfig = {
   entryPointAddress: "0x0000000000000000000000000000000000000001" as `0x${string}`,
   erc3009TokenAddress: "0x0000000000000000000000000000000000000002" as `0x${string}`,
   paymentTargetContract: "0x0000000000000000000000000000000000000003" as `0x${string}`,
-  ethPriceFactoryAddress: "0x0000000000000000000000000000000000000004" as `0x${string}`,
-  ethPriceWethAddress: "0x0000000000000000000000000000000000000005" as `0x${string}`,
-  ethPriceQuoteTokenAddress: "0x0000000000000000000000000000000000000006" as `0x${string}`,
-  ethPriceFeeTier: 500,
 };
 
 describe("GasPaymentClient", () => {
@@ -77,19 +61,6 @@ describe("GasPaymentClient", () => {
       ).toThrow(ValidationError);
     });
 
-    it("throws ValidationError when eth price config is missing", () => {
-      expect(
-        () =>
-          new GasPaymentClient({
-            ...validConfig,
-            ethPriceFactoryAddress: undefined as unknown as `0x${string}`,
-            ethPriceWethAddress: undefined as unknown as `0x${string}`,
-            ethPriceQuoteTokenAddress: undefined as unknown as `0x${string}`,
-            ethPriceFeeTier: undefined as unknown as number,
-          })
-      ).toThrow(ValidationError);
-    });
-
     it("creates client with valid config", () => {
       const client = new GasPaymentClient(validConfig);
       expect(client).toBeDefined();
@@ -97,23 +68,11 @@ describe("GasPaymentClient", () => {
   });
 
   describe("getTokenPrice", () => {
-    it("returns price and priceE18 from backend", async () => {
-      respondOk({ price: "1000000000000000000" });
+    it("returns tokenPerETH from backend", async () => {
+      respondOk({ tokenPerETH: "2500000000" });
       const client = new GasPaymentClient(validConfig);
       const res = await client.getTokenPrice();
-      expect(res.priceE18).toBe(1000000000000000000n);
-      expect(Number(res.price)).toBe(1);
-    });
-  });
-
-  describe("getEthPrice", () => {
-    it("returns price and priceE18 from Uniswap V3 pool via getEthPriceFromPool", async () => {
-      const client = new GasPaymentClient(validConfig);
-      const res = await client.getEthPrice();
-      expect(res).toHaveProperty("price");
-      expect(res).toHaveProperty("priceE18");
-      expect(res.priceE18).toBe(2500n * 10n ** 18n);
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(res.tokenPerETH).toBe(2500000000n);
     });
   });
 
@@ -155,6 +114,7 @@ describe("GasPaymentClient", () => {
       expect(result.requestId).toBe("sub-456");
       const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
       expect(callBody.sender).toBe("0xa");
+      expect(callBody.token).toBe(validConfig.erc3009TokenAddress);
       expect(callBody.signature).toBe("0x1234");
     });
   });
@@ -187,7 +147,7 @@ describe("GasPaymentClient", () => {
         })
         .mockResolvedValueOnce({
           status: 200,
-          json: () => Promise.resolve({ code: 200, message: "ok", data: { price: "0" } }),
+          json: () => Promise.resolve({ code: 200, message: "ok", data: { tokenPerETH: "0" } }),
         });
       const client = new GasPaymentClient(validConfig);
       await expect(
@@ -195,7 +155,6 @@ describe("GasPaymentClient", () => {
           sender: "0x0000000000000000000000000000000000000002" as `0x${string}`,
           target: validConfig.paymentTargetContract,
           callData: "0x" as `0x${string}`,
-          tokenDecimals: 6,
         })
       ).rejects.toThrow(ValidationError);
     });

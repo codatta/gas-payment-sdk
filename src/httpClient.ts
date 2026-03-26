@@ -94,15 +94,13 @@ export class HttpClient {
     }
   }
 
-  /** GET /bundler/price. Optional symbol for future multi-token support. */
+  /** GET /bundler/price?token=0x... */
   async getTokenPrice(
-    params: TokenPriceRequest = {}
+    params: TokenPriceRequest
   ): Promise<TokenPriceResponse> {
-    const searchParams: Record<string, string> = {};
-    if (params.symbol) searchParams.symbol = params.symbol;
     return this.request<TokenPriceResponse>("/bundler/price", {
       method: "GET",
-      searchParams: Object.keys(searchParams).length ? searchParams : undefined,
+      searchParams: { token: params.token },
     });
   }
 

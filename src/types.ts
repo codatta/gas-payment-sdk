@@ -14,16 +14,6 @@ export interface SdkConfig {
   paymentTargetContract: `0x${string}`;
   /** EntryPoint contract address (handleOps) */
   entryPointAddress: `0x${string}`;
-  /** Uniswap V3 Factory address. Used by getEthPrice() to resolve pool from WETH + quote token. */
-  ethPriceFactoryAddress: `0x${string}`;
-  /** WETH address for ETH price (e.g. Wrapped Ether). */
-  ethPriceWethAddress: `0x${string}`;
-  /** Quote token address (e.g. USDC) for the ETH price pool. */
-  ethPriceQuoteTokenAddress: `0x${string}`;
-  /** Fee tier of the pool in hundredths of a bip (e.g. 500 = 0.05%, 3000 = 0.3%). */
-  ethPriceFeeTier: number;
-  /** Quote token decimals (e.g. 6 for USDC). Default 6. */
-  ethPriceQuoteDecimals?: number;
   /** Optional API key for bundler auth */
   apiKey?: string;
   /** Request timeout in ms */
@@ -37,15 +27,16 @@ export interface ApiResponse<T> {
   data?: T;
 }
 
-/** GET /bundler/price - optional symbol query for future multi-token support */
+/** GET /bundler/price?token=0x... */
 export interface TokenPriceRequest {
-  /** Token symbol (e.g. "ETH", "USDC"). Optional if backend returns single price */
-  symbol?: string;
+  /** ERC3009 token (or adapter) address */
+  token: `0x${string}`;
 }
 
-/** Price returned by backend: scaled string e.g. 1e18 = 1.0, plus optional gas limits. */
+/** Price returned by backend: token smallest units equivalent to 1 ETH, plus optional gas limits. */
 export interface TokenPriceResponse {
-  price: string;
+  /** Token amount (smallest units) per 1 ETH, with fee factor applied. */
+  tokenPerETH: string;
   /** Minimum verificationGasLimit required for submit (from config/env). */
   verificationGasLimit?: number;
   /** Minimum preVerificationGas required for submit (from config/env). */
@@ -89,20 +80,14 @@ export interface GasQuote {
   preVerificationGas?: number;
 }
 
-/** Fee breakdown: Amount = ceil(gas * gas_price * ETH_price / token_price * safetyMargin) (prices in 10^18 BigInt). */
+/** Fee breakdown: Amount = ceil(gasCostWei * tokenPerETH / 1e18 * safetyMargin) */
 export interface FeeBreakdown {
   /** Estimated gas units */
   gas: bigint;
-  /** Gas price in wei per gas (used in formula) */
+  /** Gas price in wei per gas */
   gasPriceWei: bigint;
-  /** ETH price scaled by 10^18 (BigInt) */
-  ethPriceE18: bigint;
-  /** Payment token price scaled by 10^18 (BigInt) */
-  tokenPriceE18: bigint;
-  /** ETH price for display (e.g. USD per ETH) */
-  ethPrice: number;
-  /** Payment token price for display (e.g. USD per token) */
-  tokenPrice: number;
+  /** Token smallest units per 1 ETH (from bundler API) */
+  tokenPerETH: bigint;
   /** Resulting payment amount in token smallest units (includes safety margin) */
   paymentAmount: bigint;
   /** Safety margin applied (e.g. 1.2 = 20% buffer) */
@@ -160,6 +145,7 @@ export interface BuildUserOpParams {
 export interface SubmitRequest {
   sender: string;
   target: string;
+  token: string;
   nonce: number;
   callData: string;
   callGasLimit?: number;
@@ -187,8 +173,6 @@ export interface PreparePaymentParams {
   target: `0x${string}`;
   callData: `0x${string}`;
   paymasterAndData?: `0x${string}`;
-  /** Token decimals for payment amount (e.g. 6 for USDC) */
-  tokenDecimals: number;
   /** Override gas limits from quote; if not set, quote values are used */
   callGasLimit?: bigint;
   verificationGasLimit?: bigint;
