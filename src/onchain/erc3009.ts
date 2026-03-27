@@ -58,8 +58,12 @@ export interface TransferWithAuthorizationParams {
 }
 
 /**
- * Build TransferWithAuthorization typed data from an explicit EIP-712 domain and message.
- * This mirrors the on-chain EIP-712 domain (e.g. from eip712Domain()) when provided by the caller.
+ * Build EIP-712 `TransferWithAuthorization` typed data from an explicit domain and message.
+ *
+ * Use this when you already have the token's EIP-712 domain (e.g. from {@link fetchEip712DomainFromToken}).
+ *
+ * @param params - The domain, sender, receiver, value, validity window, and nonce.
+ * @returns A fully structured {@link TransferWithAuthorizationTypedData} ready for `signTypedData`.
  */
 export function buildTransferWithAuthorizationTypedData(
   params: TransferWithAuthorizationParams
@@ -95,8 +99,13 @@ export function buildTransferWithAuthorizationTypedData(
 }
 
 /**
- * Build EIP-3009 TransferWithAuthorization typed data and prepared tx info.
- * Caller signs the typed data; the signed authorization can be submitted to the token contract.
+ * Build an EIP-3009 `TransferWithAuthorization` typed data payload and a {@link PreparedTx}.
+ *
+ * The caller signs the returned `typedData`; the signed authorization is then submitted
+ * to the token contract by the bundler.
+ *
+ * @param params - Payment parameters including `token`, `from`, `to`, `amount`, `chainId`, and optional `validAfter`, `validBefore`, `nonce`, `tokenName`, `tokenVersion`.
+ * @returns The EIP-712 typed data for signing and a {@link PreparedTx} envelope.
  */
 export function buildErc3009Payment(params: {
   token: Address;
@@ -156,21 +165,16 @@ export function buildErc3009Payment(params: {
 }
 
 /**
- * Build paymasterAndData payload for ERC3009-based gas payment.
+ * Build the `paymasterAndData` bytes for ERC3009-based gas payment.
  *
- * abi.encodePacked(
- *   address(paymaster),
- *   uint8(paymentType),
- *   address(expectedSender),
- *   address(erc3009Receiver),
- *   uint256(value),
- *   uint256(validAfter),
- *   uint256(validBefore),
- *   bytes32(nonce),
- *   uint8(v),
- *   bytes32(r),
- *   bytes32(s)
- * )
+ * Encodes the paymaster address and ERC3009 authorization signature via `abi.encodePacked`:
+ * ```
+ * paymaster | paymentType | expectedSender | erc3009Receiver |
+ * value | validAfter | validBefore | nonce | v | r | s
+ * ```
+ *
+ * @param params - All fields for packed encoding: `paymaster`, `paymentType`, `expectedSender`, `erc3009Receiver`, `value`, `validAfter`, `validBefore`, `nonce`, `v`, `r`, `s`.
+ * @returns The ABI-packed `paymasterAndData` hex string.
  */
 export function buildErc3009PaymasterAndData(params: {
   paymaster: Address;
@@ -229,8 +233,12 @@ export function buildErc3009PaymasterAndData(params: {
 }
 
 /**
- * Fetch EIP-712 domain from an ERC3009 token using EIP-5267 eip712Domain().
- * Falls back to provided name/version when the contract does not implement EIP-5267.
+ * Fetch the EIP-712 domain from an ERC3009 token using the EIP-5267 `eip712Domain()` function.
+ *
+ * Falls back to `fallbackName` / `fallbackVersion` when the contract does not implement EIP-5267.
+ *
+ * @param params - Query parameters: `provider`, `token`, `chainId`, and optional `fallbackName` / `fallbackVersion`.
+ * @returns The token's {@link Eip712Domain}.
  */
 export async function fetchEip712DomainFromToken(params: {
   provider: PublicClient;

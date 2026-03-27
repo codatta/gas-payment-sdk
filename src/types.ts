@@ -198,7 +198,13 @@ export interface StatusResponse {
   failReason?: string;
 }
 
-/** SDK error types */
+/**
+ * Error thrown when the bundler HTTP API returns a non-success response or a network failure occurs.
+ *
+ * @param message - Human-readable error description.
+ * @param statusCode - HTTP status code (if available).
+ * @param body - Raw response body string (if available).
+ */
 export class SdkHttpError extends Error {
   constructor(
     message: string,
@@ -210,6 +216,12 @@ export class SdkHttpError extends Error {
   }
 }
 
+/**
+ * Error thrown when an on-chain call (e.g. contract read, gas estimation) fails.
+ *
+ * @param message - Human-readable error description.
+ * @param cause - The underlying error from the RPC provider.
+ */
 export class OnchainError extends Error {
   constructor(message: string, public cause?: unknown) {
     super(message);
@@ -217,6 +229,11 @@ export class OnchainError extends Error {
   }
 }
 
+/**
+ * Error thrown when SDK input validation fails (e.g. missing config, insufficient allowance).
+ *
+ * @param message - Human-readable validation error description.
+ */
 export class ValidationError extends Error {
   constructor(message: string) {
     super(message);

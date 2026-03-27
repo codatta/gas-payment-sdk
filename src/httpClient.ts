@@ -10,15 +10,23 @@ import type {
 } from "./types";
 import { SdkHttpError } from "./types";
 
+/** Configuration for {@link HttpClient}. */
 export interface HttpClientConfig {
+  /** Base URL for the bundler REST API (e.g. `https://api.example.com/api/v1`). */
   apiBaseUrl: string;
+  /** Optional Bearer token for bundler API authentication. */
   apiKey?: string;
+  /** Request timeout in milliseconds (default: 30000). */
   timeout?: number;
 }
 
 /**
- * HTTP client for bundler REST API.
- * Works in both Node.js and browser (uses fetch).
+ * Low-level HTTP client for the bundler REST API.
+ *
+ * Uses the Fetch API and works in both Node.js and browser environments.
+ * All responses are expected to follow the {@link ApiResponse} envelope format.
+ *
+ * @throws {@link SdkHttpError} on non-success responses, timeouts, or network errors.
  */
 export class HttpClient {
   private baseUrl: string;
@@ -94,7 +102,12 @@ export class HttpClient {
     }
   }
 
-  /** GET /bundler/price?token=0x... */
+  /**
+   * Fetch the token-per-ETH price from the bundler (`GET /bundler/price`).
+   *
+   * @param params - Token address to query.
+   * @returns The token price response including rate and optional gas limits.
+   */
   async getTokenPrice(
     params: TokenPriceRequest
   ): Promise<TokenPriceResponse> {
@@ -104,7 +117,12 @@ export class HttpClient {
     });
   }
 
-  /** POST /bundler/quote */
+  /**
+   * Request a gas quote from the bundler (`POST /bundler/quote`).
+   *
+   * @param req - Optional quote parameters (e.g. `batchSize`).
+   * @returns Raw quote response with gas price components and limits.
+   */
   async postQuote(req: QuoteRequest = {}): Promise<QuoteResponse> {
     return this.request<QuoteResponse>("/bundler/quote", {
       method: "POST",
@@ -112,7 +130,12 @@ export class HttpClient {
     });
   }
 
-  /** POST /bundler/submit */
+  /**
+   * Submit a signed UserOperation to the bundler (`POST /bundler/submit`).
+   *
+   * @param req - The full submit request payload including signature.
+   * @returns Response containing the assigned `requestId`.
+   */
   async postSubmit(req: SubmitRequest): Promise<SubmitResponse> {
     return this.request<SubmitResponse>("/bundler/submit", {
       method: "POST",
@@ -120,7 +143,12 @@ export class HttpClient {
     });
   }
 
-  /** GET /bundler/status/:id */
+  /**
+   * Query the status of a submitted operation (`GET /bundler/status/:id`).
+   *
+   * @param id - The request ID returned by {@link postSubmit}.
+   * @returns Current status, optional transaction hash, and failure reason.
+   */
   async getStatus(id: string): Promise<StatusResponse> {
     return this.request<StatusResponse>(`/bundler/status/${encodeURIComponent(id)}`, {
       method: "GET",

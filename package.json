@@ -28,7 +28,9 @@
     "example:status": "tsx examples/basic.ts status",
     "example:submit": "tsx examples/basic.ts submit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "docs": "typedoc",
+    "docs:watch": "typedoc --watch"
   },
   "keywords": [
     "gas",
@@ -43,6 +45,7 @@
     "dotenv": "^17.3.1",
     "tsup": "^8.0.0",
     "tsx": "^4.7.0",
+    "typedoc": "^0.28.18",
     "typescript": "^5.3.0",
     "vitest": "^2.0.0"
   },

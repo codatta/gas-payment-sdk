@@ -1,5 +1,6 @@
 import type { Address } from "viem";
 
+/** Default WETH contract address on Base (and Base Sepolia). */
 export const DEFAULT_WETH_BASE =
   "0x4200000000000000000000000000000000000006" as Address;
 

@@ -22,7 +22,10 @@ export {
   fetchEip712DomainFromToken,
   ENTRY_POINT_ABI,
 } from "./onchain";
-export type { TransferWithAuthorizationTypedData } from "./onchain";
+export type {
+  TransferWithAuthorizationTypedData,
+  TransferWithAuthorizationParams,
+} from "./onchain";
 export {
   DEFAULT_WETH_BASE,
   ERC20_BALANCE_OF_ABI,

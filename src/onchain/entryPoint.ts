@@ -7,6 +7,7 @@ import {
 } from "viem";
 import type { UserOperation, HandleOpsParams, BuildUserOpParams } from "../types";
 
+/** ABI fragment for the EntryPoint contract (`handleOps`, `getUserOpHash`, `getNonce`). */
 export const ENTRY_POINT_ABI = [
   {
     inputs: [
@@ -88,7 +89,14 @@ function userOpToTuple(op: UserOperation) {
 }
 
 /**
- * Compute userOpHash as in EntryPoint.getUserOpHash (keccak256 of abi.encode(chainId, entryPoint, ...)).
+ * Compute the `userOpHash` locally, matching the on-chain `EntryPoint.getUserOpHash` logic.
+ *
+ * The hash is `keccak256(abi.encode(chainId, entryPoint, sender, target, nonce, ...))`.
+ *
+ * @param op - The UserOperation to hash.
+ * @param chainId - The chain ID for domain separation.
+ * @param entryPointAddress - The deployed EntryPoint contract address.
+ * @returns The 32-byte `userOpHash` as a hex string.
  */
 export function getUserOpHash(
   op: UserOperation,
@@ -118,7 +126,11 @@ export function getUserOpHash(
 }
 
 /**
- * Encode handleOps(ops, beneficiary) calldata for EntryPoint.
+ * Encode the `handleOps(ops, beneficiary)` calldata for the EntryPoint contract.
+ *
+ * @param params - The operations array and beneficiary address.
+ * @param entryPointAddress - The deployed EntryPoint contract address.
+ * @returns An object with `to` (EntryPoint address) and `data` (ABI-encoded calldata).
  */
 export function encodeHandleOpsCall(
   params: HandleOpsParams,
@@ -137,7 +149,13 @@ export function encodeHandleOpsCall(
 }
 
 /**
- * Build UserOperation struct (signature can be placeholder 0x for estimation).
+ * Build a {@link UserOperation} struct from the given parameters.
+ *
+ * The `signature` field is set to `"0x"` (placeholder) — suitable for gas estimation
+ * before the user signs.
+ *
+ * @param params - All UserOperation fields except `signature`.
+ * @returns A complete {@link UserOperation} with a placeholder signature.
  */
 export function buildUserOperation(params: BuildUserOpParams): UserOperation {
   return {

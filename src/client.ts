@@ -44,11 +44,40 @@ const ERC20_ALLOWANCE_ABI = [
   },
 ] as const;
 
+/**
+ * High-level client for the gas payment pooling system.
+ *
+ * Provides methods to quote gas fees, prepare ERC3009-based payment operations,
+ * submit signed UserOperations to the bundler, and query transaction status.
+ *
+ * @example
+ * ```ts
+ * const client = new GasPaymentClient({
+ *   apiBaseUrl: "https://api.example.com/api/v1",
+ *   rpcUrl: "https://mainnet.base.org",
+ *   chainId: 8453,
+ *   erc3009TokenAddress: "0x...",
+ *   paymentTargetContract: "0x...",
+ *   entryPointAddress: "0x...",
+ * });
+ * const { fee, userOp, erc3009Payload } = await client.preparePayment({
+ *   sender: "0x...",
+ *   target: "0x...",
+ *   callData: "0x...",
+ * });
+ * ```
+ */
 export class GasPaymentClient {
   private config: SdkConfig;
   private http: HttpClient;
   private _provider: PublicClient | null = null;
 
+  /**
+   * Create a new GasPaymentClient.
+   *
+   * @param config - SDK configuration including API URL, RPC URL, chain ID, and contract addresses.
+   * @throws {@link ValidationError} if required config fields are missing.
+   */
   constructor(config: SdkConfig) {
     if (!config.apiBaseUrl?.trim()) {
       throw new ValidationError("apiBaseUrl is required");
@@ -78,8 +107,13 @@ export class GasPaymentClient {
   }
 
   /**
-   * Get token price from backend: token smallest units per 1 ETH.
-   * If no token is specified, uses the configured erc3009TokenAddress.
+   * Get token price from the bundler backend.
+   *
+   * Returns the number of token smallest units equivalent to 1 ETH,
+   * plus optional gas limit suggestions from the backend.
+   *
+   * @param params - Optional token address override. Defaults to the configured `erc3009TokenAddress`.
+   * @returns Token-per-ETH rate and optional gas limit hints.
    */
   async getTokenPrice(
     params: Partial<TokenPriceRequest> = {}
@@ -95,7 +129,10 @@ export class GasPaymentClient {
   }
 
   /**
-   * Get gas quote from backend (POST /bundler/quote).
+   * Get a gas quote from the bundler backend (`POST /bundler/quote`).
+   *
+   * @param params - Optional parameters (e.g. `batchSize`).
+   * @returns Normalized gas quote and the effective gas price in wei.
    */
   async getQuote(
     params: { batchSize?: number } = {}
@@ -105,8 +142,12 @@ export class GasPaymentClient {
   }
 
   /**
-   * Get gas price in wei from backend quote.
-   * Convenience wrapper around getQuote().
+   * Get the current gas price in wei from the bundler backend.
+   *
+   * Convenience wrapper around {@link getQuote}.
+   *
+   * @param params - Optional parameters (e.g. `batchSize`).
+   * @returns Gas price in wei.
    */
   async getGasPriceWei(params: { batchSize?: number } = {}): Promise<bigint> {
     const { gasPriceWei } = await this.getQuote(params);
@@ -114,8 +155,15 @@ export class GasPaymentClient {
   }
 
   /**
-   * Prepare payment: build UserOp, estimate gas for handleOps, compute fee, build ERC3009 payload.
-   * Uses Token/ETH price from bundler API directly.
+   * Prepare a full payment operation.
+   *
+   * Builds a UserOperation, estimates gas for `handleOps`, computes the token fee
+   * (including safety margin), checks underlying ERC20 allowance, and constructs
+   * the ERC3009 `TransferWithAuthorization` payload for signing.
+   *
+   * @param params - Payment parameters including sender, target, callData, and optional gas limit overrides.
+   * @returns Everything needed to sign and submit: UserOp, fee breakdown, ERC3009 typed data, and userOpHash.
+   * @throws {@link ValidationError} if token price is non-positive, EntryPoint is unreachable, or ERC20 allowance is insufficient.
    */
   async preparePayment(
     params: PreparePaymentParams
@@ -268,7 +316,12 @@ export class GasPaymentClient {
   }
 
   /**
-   * Submit signed UserOperation to backend (POST /bundler/submit).
+   * Submit a signed UserOperation to the bundler backend (`POST /bundler/submit`).
+   *
+   * @param params - The UserOperation and its EIP-712 signature.
+   * @param params.userOp - The UserOperation struct (from {@link preparePayment}).
+   * @param params.signature - The user's hex-encoded signature over the userOpHash.
+   * @returns A {@link SubmitResult} containing the `requestId` for status polling.
    */
   async submitPayment(params: {
     userOp: UserOperation;
@@ -295,7 +348,10 @@ export class GasPaymentClient {
   }
 
   /**
-   * Get status of a submitted request (GET /bundler/status/:id).
+   * Query the status of a previously submitted operation (`GET /bundler/status/:id`).
+   *
+   * @param requestId - The request ID returned by {@link submitPayment}.
+   * @returns Current status, optional txHash, and failure reason if applicable.
    */
   async getStatus(requestId: string): Promise<StatusResponse> {
     return this.http.getStatus(requestId);

@@ -1,7 +1,12 @@
 import type { HttpClient } from "./httpClient";
 import type { TokenPriceRequest, TokenPriceResponse, GasQuote, FeeBreakdown } from "./types";
 
-/** Parse backend response: tokenPerETH = token smallest units per 1 ETH. */
+/**
+ * Parse the backend token price response into a `bigint` rate.
+ *
+ * @param res - Raw token price response from the bundler API.
+ * @returns Object containing `tokenPerETH` as a `bigint` (token smallest units per 1 ETH).
+ */
 export function parsePriceResponse(res: TokenPriceResponse): {
   tokenPerETH: bigint;
 } {
@@ -15,7 +20,13 @@ export function parsePriceResponse(res: TokenPriceResponse): {
   return { tokenPerETH };
 }
 
-/** Fetch token price from API. */
+/**
+ * Fetch token price from the bundler API and parse it.
+ *
+ * @param client - The HTTP client instance for API communication.
+ * @param params - Token price request parameters (token address).
+ * @returns Object containing `tokenPerETH` as a `bigint`.
+ */
 export async function fetchTokenPrice(
   client: HttpClient,
   params: TokenPriceRequest
@@ -33,10 +44,12 @@ export const DEFAULT_SAFETY_MARGIN = 1.2;
 const ONE_ETH = 10n ** 18n;
 
 /**
- * Compute payment amount in token smallest units.
+ * Compute the payment amount in token smallest units.
  *
- * tokenPerETH = token smallest units per 1 ETH (from bundler API).
- * Formula: Amount = ceil(gasCostWei * tokenPerETH / 1e18 * safetyMargin)
+ * Formula: `Amount = ceil(gasCostWei * tokenPerETH / 1e18 * safetyMargin)`
+ *
+ * @param params - Calculation inputs: `gas`, `gasPriceWei`, `tokenPerETH`, and optional `safetyMargin`.
+ * @returns Payment amount in token smallest units (ceiling division applied).
  */
 export function calculatePaymentAmount(params: {
   gas: bigint;
@@ -59,7 +72,12 @@ export function calculatePaymentAmount(params: {
   return (numerator + denominator - 1n) / denominator;
 }
 
-/** Build FeeBreakdown from quote, tokenPerETH, and estimated gas. */
+/**
+ * Build a complete {@link FeeBreakdown} from gas estimate, gas price, and token rate.
+ *
+ * @param params - Fee calculation inputs: `gas`, `gasPriceWei`, `tokenPerETH`, and optional `safetyMargin`.
+ * @returns A {@link FeeBreakdown} with all inputs and the computed `paymentAmount`.
+ */
 export function buildFeeBreakdown(params: {
   gas: bigint;
   gasPriceWei: bigint;
@@ -80,14 +98,26 @@ export function buildFeeBreakdown(params: {
 }
 
 /**
- * Compute ERC3009 paymaster \"value\" from fee data.
- * Placeholder implementation: returns 0n for now.
+ * Compute the ERC3009 paymaster "value" field from fee data.
+ *
+ * @remarks Placeholder implementation — currently returns `0n`.
+ *
+ * @param _fee - The fee breakdown (unused in current implementation).
+ * @returns The paymaster value as a `bigint`.
  */
 export function computePaymasterValue(_fee: FeeBreakdown): bigint {
   return 0n;
 }
 
-/** Normalize backend QuoteResponse to GasQuote and get gas price in wei (for fee formula). */
+/**
+ * Normalize a backend quote response into a {@link GasQuote} and effective gas price in wei.
+ *
+ * If `gasPrice` is provided and non-zero it is used directly; otherwise the effective
+ * gas price is computed as `baseFee + priorityFee`.
+ *
+ * @param res - Raw quote response from the bundler API.
+ * @returns Normalized quote and the effective `gasPriceWei`.
+ */
 export function normalizeQuote(res: {
   baseFee?: string;
   priorityFee?: string;

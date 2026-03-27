@@ -8,6 +8,7 @@ export {
 export {
   buildErc3009Payment,
   type TransferWithAuthorizationTypedData,
+  type TransferWithAuthorizationParams,
   buildTransferWithAuthorizationTypedData,
   buildErc3009PaymasterAndData,
   type Eip712Domain,
