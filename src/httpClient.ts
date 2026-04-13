@@ -96,7 +96,26 @@ export class HttpClient {
         if (e.name === "AbortError") {
           throw new SdkHttpError(`Request timeout after ${this.timeout}ms`);
         }
-        throw new SdkHttpError(e.message);
+        // Node fetch (undici) throws generic "fetch failed" with the real cause
+        // attached as `error.cause`. Unwrap it so callers can see ECONNRESET /
+        // ENOTFOUND / UND_ERR_SOCKET / certificate errors instead of a useless
+        // top-level message.
+        const parts: string[] = [e.message];
+        let cause: unknown = (e as { cause?: unknown }).cause;
+        while (cause) {
+          if (cause instanceof Error) {
+            const code = (cause as { code?: string }).code;
+            parts.push(code ? `${cause.message} (${code})` : cause.message);
+            cause = (cause as { cause?: unknown }).cause;
+          } else {
+            parts.push(String(cause));
+            break;
+          }
+        }
+        const detailed = parts.filter((p) => p && p.length > 0).join(" -> ");
+        throw new SdkHttpError(
+          `${detailed} [url=${url.toString()}]`
+        );
       }
       throw new SdkHttpError("Unknown request error");
     }
