@@ -6,9 +6,35 @@ Works in **Node.js** and **browser**.
 
 ## Install
 
+> Not yet published to npm. Install directly from the Git repository, or vendor the source into your project.
+
+**Option A — install from Git** (requires SSH access to the repo):
+
 ```bash
-npm install @xny/gas-payment-sdk
+npm install git+ssh://git@github.com:codatta/gas-payment-sdk.git
+# pin to a commit / tag / branch:
+npm install git+ssh://git@github.com:codatta/gas-payment-sdk.git#<commit-sha-or-tag>
 ```
+
+The `prepare` lifecycle will build `dist/` automatically on install.
+
+**Option B — local path** (monorepo / sibling checkout):
+
+```bash
+git clone git@github.com:codatta/gas-payment-sdk.git
+cd gas-payment-sdk && npm install && npm run build
+# in your app:
+npm install /absolute/path/to/gas-payment-sdk
+```
+
+**Option C — npm link** (active SDK development):
+
+```bash
+cd /path/to/gas-payment-sdk && npm run build && npm link
+cd /path/to/your-app && npm link @xny/gas-payment-sdk
+```
+
+Peer requirement: `viem ^2`, Node `>=18`.
 
 ## Config
 
