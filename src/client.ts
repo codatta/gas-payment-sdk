@@ -1,5 +1,6 @@
 import type {
   SdkConfig,
+  ResolvedSdkConfig,
   TokenPriceRequest,
   GasQuote,
   PreparePaymentParams,
@@ -10,6 +11,7 @@ import type {
   StatusResponse,
 } from "./types";
 import { ValidationError } from "./types";
+import { CHAIN_DEFAULTS, DEFAULT_CHAIN_ID } from "./networks";
 import { HttpClient } from "./httpClient";
 import { buildFeeBreakdown, normalizeQuote } from "./price";
 import { createProvider } from "./onchain/provider";
@@ -68,34 +70,26 @@ const ERC20_ALLOWANCE_ABI = [
  * ```
  */
 export class GasPaymentClient {
-  private config: SdkConfig;
+  private config: ResolvedSdkConfig;
   private http: HttpClient;
   private _provider: PublicClient | null = null;
 
   /**
    * Create a new GasPaymentClient.
    *
-   * @param config - SDK configuration including API URL, RPC URL, chain ID, and contract addresses.
-   * @throws {@link ValidationError} if required config fields are missing.
+   * Any field omitted from `config` is filled in from the bundled
+   * defaults for the resolved chain (see `CHAIN_DEFAULTS`). When
+   * `chainId` is also omitted, it defaults to `DEFAULT_CHAIN_ID`.
+   *
+   * @param config - SDK configuration. All fields optional when the chain has bundled defaults.
+   * @throws {@link ValidationError} if any required field is still missing after defaults are applied.
    */
-  constructor(config: SdkConfig) {
-    if (!config.apiBaseUrl?.trim()) {
-      throw new ValidationError("apiBaseUrl is required");
-    }
-    if (!config.rpcUrl?.trim()) {
-      throw new ValidationError("rpcUrl is required");
-    }
-    if (!config.erc3009TokenAddress || !config.paymentTargetContract) {
-      throw new ValidationError("erc3009TokenAddress and paymentTargetContract are required");
-    }
-    if (!config.entryPointAddress) {
-      throw new ValidationError("entryPointAddress is required");
-    }
-    this.config = config;
+  constructor(config: SdkConfig = {}) {
+    this.config = resolveSdkConfig(config);
     this.http = new HttpClient({
-      apiBaseUrl: config.apiBaseUrl,
-      apiKey: config.apiKey,
-      timeout: config.timeout,
+      apiBaseUrl: this.config.apiBaseUrl,
+      apiKey: this.config.apiKey,
+      timeout: this.config.timeout,
     });
   }
 
@@ -356,4 +350,53 @@ export class GasPaymentClient {
   async getStatus(requestId: string): Promise<StatusResponse> {
     return this.http.getStatus(requestId);
   }
+}
+
+/**
+ * Resolve a partial {@link SdkConfig} into a fully-populated config by
+ * applying the bundled per-chain defaults (`CHAIN_DEFAULTS`) for the
+ * given (or default) `chainId`. User-supplied fields always win.
+ *
+ * Exported for advanced use (e.g. inspecting what would actually be
+ * used before constructing a client).
+ *
+ * @throws {@link ValidationError} when any required field is still
+ *         missing after defaults are applied — typically when using a
+ *         chain ID with no bundled defaults and not supplying every
+ *         address explicitly.
+ */
+export function resolveSdkConfig(config: SdkConfig = {}): ResolvedSdkConfig {
+  const chainId = config.chainId ?? DEFAULT_CHAIN_ID;
+  const defaults = CHAIN_DEFAULTS[chainId];
+
+  const resolved: Partial<ResolvedSdkConfig> = {
+    chainId,
+    apiBaseUrl: config.apiBaseUrl?.trim() || defaults?.apiBaseUrl,
+    rpcUrl: config.rpcUrl?.trim() || defaults?.rpcUrl,
+    entryPointAddress: config.entryPointAddress ?? defaults?.entryPointAddress,
+    erc3009TokenAddress:
+      config.erc3009TokenAddress ?? defaults?.erc3009TokenAddress,
+    paymentTargetContract:
+      config.paymentTargetContract ?? defaults?.paymentTargetContract,
+    apiKey: config.apiKey,
+    timeout: config.timeout,
+  };
+
+  const missing: string[] = [];
+  if (!resolved.apiBaseUrl) missing.push("apiBaseUrl");
+  if (!resolved.rpcUrl) missing.push("rpcUrl");
+  if (!resolved.entryPointAddress) missing.push("entryPointAddress");
+  if (!resolved.erc3009TokenAddress) missing.push("erc3009TokenAddress");
+  if (!resolved.paymentTargetContract) missing.push("paymentTargetContract");
+
+  if (missing.length > 0) {
+    const known = Object.keys(CHAIN_DEFAULTS).join(", ");
+    throw new ValidationError(
+      `Missing required SdkConfig field(s): ${missing.join(", ")}. ` +
+        `No bundled defaults for chainId=${chainId} (known: ${known || "none"}). ` +
+        "Either pick a chainId with built-in defaults or pass the missing fields explicitly."
+    );
+  }
+
+  return resolved as ResolvedSdkConfig;
 }

@@ -20,18 +20,12 @@ import {
   buildErc3009PaymasterAndData,
   calculatePaymentAmount,
   fetchEip712DomainFromToken,
+  CHAIN_DEFAULTS,
+  DEFAULT_CHAIN_ID,
 } from "../src";
 import type { TransferWithAuthorizationTypedData } from "../src";
 import { privateKeyToAccount } from "viem/accounts";
 import { encodeFunctionData, hexToBytes } from "viem";
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value || !value.trim()) {
-    throw new Error(`Missing required environment variable ${name} in .env`);
-  }
-  return value;
-}
 
 const SET_UINT256_ABI = [
   {
@@ -53,22 +47,38 @@ function randomUint256(): bigint {
   return BigInt("0x" + Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join(""));
 }
 
-function getClient(): GasPaymentClient {
-  const apiBaseUrl = requireEnv("API_BASE_URL");
-  const rpcUrl = requireEnv("RPC_URL");
-  const chainId = parseInt(requireEnv("CHAIN_ID"), 10);
-  const entryPointAddress = requireEnv("ENTRY_POINT_ADDRESS") as `0x${string}`;
-  const erc3009TokenAddress = requireEnv("ERC3009_TOKEN_ADDRESS") as `0x${string}`;
-  const paymentTargetContract = requireEnv("PAYMENT_TARGET_CONTRACT") as `0x${string}`;
-
-  return new GasPaymentClient({
-    apiBaseUrl,
-    rpcUrl,
+/**
+ * Resolve the active network config. Env vars override the SDK defaults
+ * (`CHAIN_DEFAULTS[chainId]`); for the bundled chains, no env vars are
+ * needed at all.
+ */
+function getNetworkConfig() {
+  const chainId = parseInt(
+    process.env.CHAIN_ID ?? String(DEFAULT_CHAIN_ID),
+    10,
+  );
+  const defaults = CHAIN_DEFAULTS[chainId];
+  if (!defaults) {
+    throw new Error(
+      `No SDK defaults for chainId=${chainId}. Either pick one of ` +
+        `[${Object.keys(CHAIN_DEFAULTS).join(", ")}] or pass every address via env.`,
+    );
+  }
+  return {
     chainId,
-    entryPointAddress,
-    erc3009TokenAddress,
-    paymentTargetContract,
-  });
+    rpcUrl: process.env.RPC_URL ?? defaults.rpcUrl,
+    apiBaseUrl: process.env.API_BASE_URL ?? defaults.apiBaseUrl,
+    entryPointAddress: (process.env.ENTRY_POINT_ADDRESS ??
+      defaults.entryPointAddress) as `0x${string}`,
+    erc3009TokenAddress: (process.env.ERC3009_TOKEN_ADDRESS ??
+      defaults.erc3009TokenAddress) as `0x${string}`,
+    paymentTargetContract: (process.env.PAYMENT_TARGET_CONTRACT ??
+      defaults.paymentTargetContract) as `0x${string}`,
+  };
+}
+
+function getClient(): GasPaymentClient {
+  return new GasPaymentClient(getNetworkConfig());
 }
 
 async function cmdPrice(): Promise<void> {
@@ -106,9 +116,8 @@ async function cmdQuote(): Promise<void> {
 }
 
 async function cmdState(): Promise<void> {
-  const rpcUrl = requireEnv("RPC_URL");
-  const chainId = parseInt(requireEnv("CHAIN_ID"), 10);
-  const provider = createProvider(rpcUrl, chainId);
+  const net = getNetworkConfig();
+  const provider = createProvider(net.rpcUrl, net.chainId);
   const senderPrivateKey = process.env.SENDER_PRIVATE_KEY as `0x${string}` | undefined;
   const senderEnv = process.env.SENDER as `0x${string}` | undefined;
   if (!senderPrivateKey && !senderEnv) {
@@ -118,8 +127,8 @@ async function cmdState(): Promise<void> {
     senderPrivateKey && senderPrivateKey !== "0x"
       ? privateKeyToAccount(senderPrivateKey).address
       : (senderEnv as `0x${string}`);
-  const token = requireEnv("ERC3009_TOKEN_ADDRESS") as `0x${string}`;
-  const paymaster = requireEnv("PAYMENT_TARGET_CONTRACT") as `0x${string}`;
+  const token = net.erc3009TokenAddress;
+  const paymaster = net.paymentTargetContract;
 
   console.log("query on-chain state (ETH + ERC20 balances)");
   try {
@@ -163,10 +172,10 @@ async function cmdPrepare(): Promise<void> {
       ? privateKeyToAccount(senderPrivateKey).address
       : (senderEnv as `0x${string}`);
   const targetEnv =
-    (process.env.TARGET as `0x${string}` | undefined) ??
-    (process.env.CALL_TARGET_CONTRACT as `0x${string}` | undefined);
+    (process.env.CALL_TARGET_CONTRACT as `0x${string}` | undefined) ??
+    (process.env.TARGET as `0x${string}` | undefined);
   if (!targetEnv) {
-    throw new Error("TARGET or CALL_TARGET_CONTRACT must be set in .env for cmdPrepare()");
+    throw new Error("CALL_TARGET_CONTRACT must be set in .env for cmdPrepare()");
   }
   const target = targetEnv;
   const callData = (process.env.CALL_DATA ?? "0x") as `0x${string}`;
@@ -219,13 +228,14 @@ async function cmdSubmit(): Promise<void> {
     const account = privateKeyToAccount(privateKey);
     const sender = account.address;
     const targetEnv =
-      (process.env.TARGET as `0x${string}` | undefined) ??
-      (process.env.CALL_TARGET_CONTRACT as `0x${string}` | undefined);
+      (process.env.CALL_TARGET_CONTRACT as `0x${string}` | undefined) ??
+      (process.env.TARGET as `0x${string}` | undefined);
     if (!targetEnv) {
-      throw new Error("TARGET or CALL_TARGET_CONTRACT must be set in .env for cmdSubmit()");
+      throw new Error("CALL_TARGET_CONTRACT must be set in .env for cmdSubmit()");
     }
     const target = targetEnv;
-    const paymaster = requireEnv("PAYMENT_TARGET_CONTRACT") as `0x${string}`;
+    const net = getNetworkConfig();
+    const paymaster = net.paymentTargetContract;
     const paymentType = Number(process.env.PAYMASTER_TYPE ?? "1");
     const expectedSender = sender as `0x${string}`;
     const erc3009Receiver = paymaster as `0x${string}`;
@@ -266,9 +276,7 @@ async function cmdSubmit(): Promise<void> {
         callGasLimit = BigInt(process.env.SUBMIT_CALL_GAS);
       } else {
         try {
-          const rpcUrl = process.env.RPC_URL ?? "https://mainnet.base.org";
-          const chainId = parseInt(process.env.CHAIN_ID ?? "8453", 10);
-          const providerForGas = createProvider(rpcUrl, chainId);
+          const providerForGas = createProvider(net.rpcUrl, net.chainId);
           callGasLimit = await providerForGas.estimateGas({
             account: sender,
             to: target,
@@ -303,10 +311,9 @@ async function cmdSubmit(): Promise<void> {
       console.log("--- end ---\n");
 
       // 5. 构造 EIP-3009 typed data，并使用同一个私钥签名，得到 r,s,v
-      const chainId = parseInt(requireEnv("CHAIN_ID"), 10);
-      const erc3009Token = requireEnv("ERC3009_TOKEN_ADDRESS") as `0x${string}`;
-      const rpcUrl = requireEnv("RPC_URL");
-      const provider = createProvider(rpcUrl, chainId);
+      const chainId = net.chainId;
+      const erc3009Token = net.erc3009TokenAddress;
+      const provider = createProvider(net.rpcUrl, chainId);
       // 从合约 eip712Domain() 读取 EIP-712 domain，与链上完全一致（如不可用则回退到本地配置）
       const domain = await fetchEip712DomainFromToken({
         provider,

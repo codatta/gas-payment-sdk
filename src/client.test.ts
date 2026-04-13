@@ -65,6 +65,22 @@ describe("GasPaymentClient", () => {
       const client = new GasPaymentClient(validConfig);
       expect(client).toBeDefined();
     });
+
+    it("resolves all fields from chain defaults when only chainId is given", () => {
+      const client = new GasPaymentClient({ chainId: 84532 });
+      expect(client).toBeDefined();
+    });
+
+    it("resolves all fields from chain defaults when nothing is passed (uses DEFAULT_CHAIN_ID)", () => {
+      const client = new GasPaymentClient();
+      expect(client).toBeDefined();
+    });
+
+    it("lists every missing field in the error when chain has no defaults", () => {
+      expect(() => new GasPaymentClient({ chainId: 1 })).toThrow(
+        /apiBaseUrl.*rpcUrl.*entryPointAddress.*erc3009TokenAddress.*paymentTargetContract/
+      );
+    });
   });
 
   describe("getTokenPrice", () => {

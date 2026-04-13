@@ -38,65 +38,70 @@ Peer requirement: `viem ^2`, Node `>=18`.
 
 ## Config
 
-| Option | Description |
-|--------|-------------|
-| `apiBaseUrl` | Bundler REST API base (e.g. `https://api.example.com/api/v1`) |
-| `rpcUrl` | Chain RPC URL |
-| `chainId` | Chain ID |
-| `entryPointAddress` | EntryPoint contract (handleOps) |
-| `erc3009TokenAddress` | ERC3009 token used for payment |
-| `paymentTargetContract` | Payment recipient / beneficiary |
-| `ethPriceFactoryAddress` | Uniswap V3 Factory (used to resolve pool from WETH + quote token) |
-| `ethPriceWethAddress` | WETH address |
-| `ethPriceQuoteTokenAddress` | Quote token address (e.g. USDC) |
-| `ethPriceFeeTier` | Pool fee in hundredths of a bip (e.g. 500 = 0.05%, 3000 = 0.3%) |
-| `ethPriceQuoteDecimals` | Quote token decimals (default 6, e.g. USDC) |
-| `apiKey` | Optional API key for bundler |
-| `timeout` | Request timeout in ms |
+Every field is **optional**. Once `chainId` is known (or defaulted to `DEFAULT_CHAIN_ID = 84532` / Base Sepolia), the rest are filled in from the bundled per-chain defaults (`CHAIN_DEFAULTS`). Pass any field explicitly to override.
+
+| Option | Description | Default source |
+|--------|-------------|----------------|
+| `chainId` | EIP-155 chain ID | `DEFAULT_CHAIN_ID` (84532) |
+| `apiBaseUrl` | Bundler REST API base | from `CHAIN_DEFAULTS[chainId]` |
+| `rpcUrl` | Chain RPC URL | from `CHAIN_DEFAULTS[chainId]` |
+| `entryPointAddress` | EntryPoint contract (handleOps) | from `CHAIN_DEFAULTS[chainId]` |
+| `erc3009TokenAddress` | ERC3009 token used for payment | from `CHAIN_DEFAULTS[chainId]` |
+| `paymentTargetContract` | PoolPaymaster (also ERC3009 receiver) | from `CHAIN_DEFAULTS[chainId]` |
+| `apiKey` | Optional bearer token for bundler | — |
+| `timeout` | Request timeout (ms) | 30000 |
+
+Currently bundled chains: `84532` (Base Sepolia). For chains without bundled defaults you must pass every address explicitly, otherwise the constructor throws `ValidationError` listing what's missing.
 
 ## Usage
 
 ```ts
 import { GasPaymentClient } from "@xny/gas-payment-sdk";
 
-const client = new GasPaymentClient({
+// Zero-config — uses Base Sepolia defaults
+const client = new GasPaymentClient();
+
+// Or pick the chain explicitly (still uses bundled defaults)
+const client2 = new GasPaymentClient({ chainId: 84532 });
+
+// Override individual fields (e.g. point at your own RPC)
+const client3 = new GasPaymentClient({
+  chainId: 84532,
+  rpcUrl: "https://base-sepolia.g.alchemy.com/v2/<key>",
+  apiKey: "<bundler-token>",
+});
+
+// Full custom (e.g. unsupported chain or local anvil)
+const clientCustom = new GasPaymentClient({
   apiBaseUrl: "https://api.example.com/api/v1",
-  rpcUrl: "https://eth.llamarpc.com",
-  chainId: 1,
+  rpcUrl: "http://127.0.0.1:8545",
+  chainId: 31337,
   entryPointAddress: "0x...",
   erc3009TokenAddress: "0x...",
   paymentTargetContract: "0x...",
-  ethPriceFactoryAddress: "0x...",
-  ethPriceWethAddress: "0x...",
-  ethPriceQuoteTokenAddress: "0x...",
-  ethPriceFeeTier: 500,
 });
 
-// 1. Token price
-const tokenPrice = await client.getTokenPrice({ symbol: "USDC" });
+// 1. Token price (token smallest units per 1 ETH)
+const tokenPrice = await client.getTokenPrice();
 
-// 2. ETH price (from Uniswap V3 pool, not backend)
-const ethPrice = await client.getEthPrice();
-
-// 3. Gas quote
+// 2. Gas quote
 const { quote, gasPriceWei } = await client.getQuote();
 
-// 4. Prepare payment: UserOp, handleOps tx, fee, ERC3009 payload
+// 3. Prepare payment: UserOp, handleOps tx, fee, ERC3009 payload
 const prepared = await client.preparePayment({
   sender: "0xUser...",
   target: "0xTarget...",
   callData: "0x...",
-  tokenDecimals: 6,
 });
 // Sign prepared.userOpHash (UserOperation) and prepared.erc3009Payload.typedData (ERC3009).
 
-// 5. Submit
+// 4. Submit
 const result = await client.submitPayment({
   userOp: { ...prepared.userOp, signature: "0x..." },
   signature: "0x...",
 });
 
-// 6. Status
+// 5. Status
 const status = await client.getStatus(result.requestId);
 ```
 
@@ -115,10 +120,10 @@ Amount = gas × gas_price × ETH_price / token_price
 
 ## Example
 
-Run all steps:
-
 ```bash
-npm run example
+cp .env.example .env       # then fill in SENDER_PRIVATE_KEY + TARGET
+npm install
+npm run example            # run all steps
 ```
 
 Run a single SDK interface:
@@ -126,13 +131,13 @@ Run a single SDK interface:
 | Command | Interface |
 |---------|-----------|
 | `npm run example:price` | `getTokenPrice()` |
-| `npm run example:eth-price` | `getEthPrice()` |
 | `npm run example:quote` | `getQuote()` |
 | `npm run example:prepare` | `preparePayment()` |
+| `npm run example:state` | on-chain ETH + ERC20 balance snapshot |
 | `npm run example:status` | `getStatus(REQUEST_ID)` |
-| `npm run example:submit` | `submitPayment()` (set `SUBMIT_SIGNATURE` to actually submit) |
+| `npm run example:submit` | `submitPayment()` (signs with `SENDER_PRIVATE_KEY` and submits) |
 
-Optional env: `API_BASE_URL`, `RPC_URL`, `CHAIN_ID`, `ENTRY_POINT_ADDRESS`, `ERC3009_TOKEN_ADDRESS`, `PAYMENT_TARGET_CONTRACT`, `ETH_PRICE_FACTORY_ADDRESS`, `ETH_PRICE_WETH_ADDRESS`, `ETH_PRICE_QUOTE_TOKEN_ADDRESS`, `ETH_PRICE_FEE_TIER`, `SENDER`, `TARGET`, `CALL_DATA`, `REQUEST_ID`, `SUBMIT_SIGNATURE`, `SUBMIT_NONCE`, `SUBMIT_CALL_GAS`, `SUBMIT_MAX_FEE`.
+See `.env.example` for the full list of variables and which are required vs optional. Network/contract values default to the Base Sepolia preset baked into the SDK.
 
 ## Tests
 

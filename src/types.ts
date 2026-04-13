@@ -1,22 +1,43 @@
 /**
  * SDK configuration. Supports both Node.js and browser.
+ *
+ * Every field is optional. Once `chainId` is known (or defaulted via
+ * {@link DEFAULT_CHAIN_ID}), the remaining fields are filled in from
+ * the built-in {@link CHAIN_DEFAULTS} table. Pass any field explicitly
+ * to override the bundled default — useful for custom deployments,
+ * unsupported chains, or production-grade RPC endpoints.
  */
 export interface SdkConfig {
   /** Base URL for bundler REST API (e.g. https://api.example.com/api/v1) */
-  apiBaseUrl: string;
+  apiBaseUrl?: string;
   /** RPC URL for the chain */
-  rpcUrl: string;
-  /** Chain ID */
-  chainId: number;
+  rpcUrl?: string;
+  /** Chain ID. Defaults to `DEFAULT_CHAIN_ID` when omitted. */
+  chainId?: number;
   /** ERC3009 token contract address used for payment */
-  erc3009TokenAddress: `0x${string}`;
+  erc3009TokenAddress?: `0x${string}`;
   /** Payment target / recipient contract address */
-  paymentTargetContract: `0x${string}`;
+  paymentTargetContract?: `0x${string}`;
   /** EntryPoint contract address (handleOps) */
-  entryPointAddress: `0x${string}`;
+  entryPointAddress?: `0x${string}`;
   /** Optional API key for bundler auth */
   apiKey?: string;
   /** Request timeout in ms */
+  timeout?: number;
+}
+
+/**
+ * Resolved configuration after applying chain defaults. All address /
+ * URL fields are guaranteed present at this point.
+ */
+export interface ResolvedSdkConfig {
+  apiBaseUrl: string;
+  rpcUrl: string;
+  chainId: number;
+  erc3009TokenAddress: `0x${string}`;
+  paymentTargetContract: `0x${string}`;
+  entryPointAddress: `0x${string}`;
+  apiKey?: string;
   timeout?: number;
 }
 

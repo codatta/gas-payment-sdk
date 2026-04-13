@@ -31,4 +31,10 @@ export {
   ERC20_BALANCE_OF_ABI,
   EIP712_DOMAIN_EIP5267_ABI,
 } from "./onchain";
-export { GasPaymentClient } from "./client";
+export { GasPaymentClient, resolveSdkConfig } from "./client";
+export {
+  CHAIN_DEFAULTS,
+  DEFAULT_CHAIN_ID,
+  getChainDefaults,
+  type ChainDefaults,
+} from "./networks";
