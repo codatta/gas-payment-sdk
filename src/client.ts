@@ -18,6 +18,7 @@ import { createProvider } from "./onchain/provider";
 import {
   encodeHandleOpsCall,
   buildUserOperation,
+  buildUserOperationTypedData,
   getUserOpHash,
   buildErc3009Payment,
 } from "./onchain";
@@ -156,7 +157,7 @@ export class GasPaymentClient {
    * the ERC3009 `TransferWithAuthorization` payload for signing.
    *
    * @param params - Payment parameters including sender, target, callData, and optional gas limit overrides.
-   * @returns Everything needed to sign and submit: UserOp, fee breakdown, ERC3009 typed data, and userOpHash.
+   * @returns Everything needed to sign and submit: UserOp, fee breakdown, ERC3009 typed data, the UserOp EIP-712 typed data, and userOpHash.
    * @throws {@link ValidationError} if token price is non-positive, EntryPoint is unreachable, or ERC20 allowance is insufficient.
    */
   async preparePayment(
@@ -292,6 +293,11 @@ export class GasPaymentClient {
       chainId: this.config.chainId,
     });
 
+    const userOpTypedData = buildUserOperationTypedData(
+      userOp,
+      this.config.chainId,
+      this.config.entryPointAddress
+    );
     const userOpHash = getUserOpHash(
       userOp,
       this.config.chainId,
@@ -306,6 +312,7 @@ export class GasPaymentClient {
       fee,
       erc3009Payload,
       userOpHash,
+      userOpTypedData,
     };
   }
 
@@ -314,7 +321,7 @@ export class GasPaymentClient {
    *
    * @param params - The UserOperation and its EIP-712 signature.
    * @param params.userOp - The UserOperation struct (from {@link preparePayment}).
-   * @param params.signature - The user's hex-encoded signature over the userOpHash.
+   * @param params.signature - The user's hex signature produced by `signTypedData(userOpTypedData)`.
    * @returns A {@link SubmitResult} containing the `requestId` for status polling.
    */
   async submitPayment(params: {

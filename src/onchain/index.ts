@@ -4,6 +4,10 @@ export {
   getUserOpHash,
   encodeHandleOpsCall,
   buildUserOperation,
+  buildUserOperationTypedData,
+  USER_OP_DOMAIN_NAME,
+  USER_OP_DOMAIN_VERSION,
+  USER_OPERATION_TYPES,
 } from "./entryPoint";
 export {
   buildErc3009Payment,
