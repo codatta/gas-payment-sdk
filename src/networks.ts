@@ -34,9 +34,9 @@ export const CHAIN_DEFAULTS: Record<number, ChainDefaults> = {
     chainId: 84532,
     rpcUrl: "https://sepolia.base.org",
     apiBaseUrl: "http://47.236.240.1:8088/api/v1",
-    entryPointAddress: "0xdFF49e7E4F413Ba24a561935e9Ebfd07a769c948",
+    entryPointAddress: "0x598971199fED81FBE9c1d2E90d6Cc05Ba21331DD",
     erc3009TokenAddress: "0xdAF1bAe7C2b038D2CAe65Aa3d0dbdB026b920fe3",
-    paymentTargetContract: "0x0EB4535C1e4318Fe8a8B69FBd655D58DB2634a73",
+    paymentTargetContract: "0x9631A0fE8081641d5c24C5BD575C638Fb42CF2C8",
   },
 };
 
