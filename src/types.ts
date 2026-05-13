@@ -148,6 +148,37 @@ export interface PreparedTx {
   typedData?: Record<string, unknown>;
 }
 
+/**
+ * EIP-712 typed-data envelope for signing a {@link UserOperation}.
+ *
+ * Pass directly to `walletClient.signTypedData` or `account.signTypedData`
+ * to obtain the `signature` for `submitPayment`.
+ */
+export interface UserOperationTypedData {
+  domain: {
+    name: string;
+    version: string;
+    chainId: number;
+    verifyingContract: `0x${string}`;
+  };
+  types: {
+    UserOperation: ReadonlyArray<{ readonly name: string; readonly type: string }>;
+  };
+  primaryType: "UserOperation";
+  message: {
+    sender: `0x${string}`;
+    target: `0x${string}`;
+    nonce: bigint;
+    callData: `0x${string}`;
+    callGasLimit: bigint;
+    verificationGasLimit: bigint;
+    preVerificationGas: bigint;
+    maxFeePerGas: bigint;
+    maxPriorityFeePerGas: bigint;
+    paymasterAndData: `0x${string}`;
+  };
+}
+
 /** Build UserOperation input (before signature) */
 export interface BuildUserOpParams {
   sender: `0x${string}`;
@@ -208,7 +239,10 @@ export interface PreparePaymentResult {
   gasPriceWei: bigint;
   fee: FeeBreakdown;
   erc3009Payload: PreparedTx;
+  /** EIP-712 digest of the UserOperation. For local equality checks and debugging. */
   userOpHash: `0x${string}`;
+  /** EIP-712 typed data the user signs via `wallet_signTypedData_v4`. */
+  userOpTypedData: UserOperationTypedData;
 }
 
 /** GET /bundler/status/:id response */

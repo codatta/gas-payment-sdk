@@ -93,7 +93,7 @@ const prepared = await client.preparePayment({
   target: "0xTarget...",
   callData: "0x...",
 });
-// Sign prepared.userOpHash (UserOperation) and prepared.erc3009Payload.typedData (ERC3009).
+// Sign prepared.userOpTypedData (UserOperation, EIP-712) and prepared.erc3009Payload.typedData (ERC3009).
 
 // 4. Submit
 const result = await client.submitPayment({

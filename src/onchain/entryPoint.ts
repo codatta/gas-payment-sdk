@@ -1,11 +1,36 @@
 import {
   type Address,
   encodeFunctionData,
-  keccak256,
-  encodeAbiParameters,
-  parseAbiParameters,
+  hashTypedData,
 } from "viem";
-import type { UserOperation, HandleOpsParams, BuildUserOpParams } from "../types";
+import type {
+  UserOperation,
+  HandleOpsParams,
+  BuildUserOpParams,
+  UserOperationTypedData,
+} from "../types";
+
+/** EIP-712 domain name used by `EntryPoint` for `UserOperation` signing. */
+export const USER_OP_DOMAIN_NAME = "Humanbased Gas Bundler";
+
+/** EIP-712 domain version used by `EntryPoint` for `UserOperation` signing. */
+export const USER_OP_DOMAIN_VERSION = "1";
+
+/** EIP-712 type definitions for `UserOperation`. Field order matches `IEntryPoint.UserOperation`, excluding `signature`. */
+export const USER_OPERATION_TYPES = {
+  UserOperation: [
+    { name: "sender", type: "address" },
+    { name: "target", type: "address" },
+    { name: "nonce", type: "uint256" },
+    { name: "callData", type: "bytes" },
+    { name: "callGasLimit", type: "uint256" },
+    { name: "verificationGasLimit", type: "uint256" },
+    { name: "preVerificationGas", type: "uint256" },
+    { name: "maxFeePerGas", type: "uint256" },
+    { name: "maxPriorityFeePerGas", type: "uint256" },
+    { name: "paymasterAndData", type: "bytes" },
+  ],
+} as const;
 
 /** ABI fragment for the EntryPoint contract (`handleOps`, `getUserOpHash`, `getNonce`). */
 export const ENTRY_POINT_ABI = [
@@ -89,40 +114,65 @@ function userOpToTuple(op: UserOperation) {
 }
 
 /**
- * Compute the `userOpHash` locally, matching the on-chain `EntryPoint.getUserOpHash` logic.
+ * Build the EIP-712 typed-data envelope for signing a UserOperation.
  *
- * The hash is `keccak256(abi.encode(chainId, entryPoint, sender, target, nonce, ...))`.
+ * Pass the returned value directly to `walletClient.signTypedData(...)` or
+ * `account.signTypedData(...)` to produce `op.signature`.
+ *
+ * @param op - The UserOperation to wrap (its `signature` field is ignored).
+ * @param chainId - The chain ID for the EIP-712 domain separator.
+ * @param entryPointAddress - The deployed EntryPoint contract address (`verifyingContract`).
+ * @returns A typed-data envelope ready for `signTypedData`.
+ */
+export function buildUserOperationTypedData(
+  op: UserOperation,
+  chainId: number,
+  entryPointAddress: Address
+): UserOperationTypedData {
+  return {
+    domain: {
+      name: USER_OP_DOMAIN_NAME,
+      version: USER_OP_DOMAIN_VERSION,
+      chainId,
+      verifyingContract: entryPointAddress,
+    },
+    types: USER_OPERATION_TYPES,
+    primaryType: "UserOperation",
+    message: {
+      sender: op.sender as Address,
+      target: op.target as Address,
+      nonce: op.nonce,
+      callData: op.callData as `0x${string}`,
+      callGasLimit: op.callGasLimit,
+      verificationGasLimit: op.verificationGasLimit,
+      preVerificationGas: op.preVerificationGas,
+      maxFeePerGas: op.maxFeePerGas,
+      maxPriorityFeePerGas: op.maxPriorityFeePerGas,
+      paymasterAndData: op.paymasterAndData as `0x${string}`,
+    },
+  };
+}
+
+/**
+ * Compute the `userOpHash` locally, matching `EntryPoint.getUserOpHash` on-chain.
+ *
+ * The hash is the EIP-712 typed-data digest of the UserOperation:
+ * `keccak256("\x19\x01" || domainSeparator || keccak256(abi.encode(USER_OPERATION_TYPEHASH, ...)))`.
+ *
+ * Most users should call {@link buildUserOperationTypedData} and pass the result to
+ * `signTypedData` — this function is provided for debugging and equality checks.
  *
  * @param op - The UserOperation to hash.
- * @param chainId - The chain ID for domain separation.
- * @param entryPointAddress - The deployed EntryPoint contract address.
- * @returns The 32-byte `userOpHash` as a hex string.
+ * @param chainId - The chain ID for the EIP-712 domain separator.
+ * @param entryPointAddress - The deployed EntryPoint contract address (`verifyingContract`).
+ * @returns The 32-byte digest as a hex string.
  */
 export function getUserOpHash(
   op: UserOperation,
   chainId: number,
   entryPointAddress: Address
 ): `0x${string}` {
-  const encoded = encodeAbiParameters(
-    parseAbiParameters(
-      "uint256, address, address, address, uint256, bytes32, uint256, uint256, uint256, uint256, uint256, bytes32"
-    ),
-    [
-      BigInt(chainId),
-      entryPointAddress,
-      op.sender as Address,
-      op.target as Address,
-      op.nonce,
-      keccak256(op.callData as `0x${string}`),
-      op.callGasLimit,
-      op.verificationGasLimit,
-      op.preVerificationGas,
-      op.maxFeePerGas,
-      op.maxPriorityFeePerGas,
-      keccak256(op.paymasterAndData as `0x${string}`),
-    ]
-  );
-  return keccak256(encoded as `0x${string}`);
+  return hashTypedData(buildUserOperationTypedData(op, chainId, entryPointAddress));
 }
 
 /**

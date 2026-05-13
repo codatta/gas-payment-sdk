@@ -7,7 +7,7 @@
  * Env: loaded from .env in project root. API_BASE_URL, RPC_URL, CHAIN_ID, ENTRY_POINT_ADDRESS,
  *      ERC3009_TOKEN_ADDRESS, PAYMENT_TARGET_CONTRACT,
  *      SENDER, TARGET, CALL_DATA, REQUEST_ID,
- *      SENDER_PRIVATE_KEY (for submit: sign userOpHash locally), or SUBMIT_SIGNATURE (manual hex)
+ *      SENDER_PRIVATE_KEY (for submit: signTypedData on userOpTypedData locally), or SUBMIT_SIGNATURE (manual hex)
  */
 import "dotenv/config";
 import { randomBytes } from "node:crypto";
@@ -371,8 +371,8 @@ async function cmdSubmit(): Promise<void> {
         preVerificationGas,
         paymasterAndData: paymasterAndData2,
       });
-      const signature = await account.sign({ hash: prepared2.userOpHash as `0x${string}` });
-      console.log("prepared2", signature,prepared2,hexToBytes(prepared2.userOpHash as `0x${string}`));
+      const signature = await account.signTypedData(prepared2.userOpTypedData);
+      console.log("prepared2", signature, prepared2, hexToBytes(prepared2.userOpHash as `0x${string}`));
       const result = await client.submitPayment({
         userOp: { ...prepared2.userOp, signature },
         signature,
